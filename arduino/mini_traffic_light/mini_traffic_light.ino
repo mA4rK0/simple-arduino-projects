@@ -1,40 +1,91 @@
-const int redPin = 2;
-const int greenPin = 3;
-const int yellowPin = 4;
+#include <Wire.h>
+#include <LiquidCrystal_I2C.h>
 
-const int DELAY = 5000;
-const int DELAY_YELLOW = 3000;
+LiquidCrystal_I2C lcd(0x27, 16, 2);
+const int trigPin = 2;
+const int echoPin = 3;
+
+float lastCM = 0;
+float lastINCH = 0;
 
 void setup() {
-  pinMode(redPin, OUTPUT);
-  pinMode(yellowPin, OUTPUT);
-  pinMode(greenPin, OUTPUT);
-  Serial.begin(9600); 
-  Serial.println("Go");
+  Wire.begin();
+  Serial.begin(9600);
+  
+  // Scanner I2C (sekali saja)
+  Serial.println("Scanning I2C addresses...");
+  for (byte address = 1; address < 127; address++) {
+    Wire.beginTransmission(address);
+    if (Wire.endTransmission() == 0) {
+      Serial.print("Device found at 0x");
+      if (address < 16) Serial.print("0");
+      Serial.println(address, HEX);
+    }
+  }
+  Serial.println("Scan complete!");
 
-  allOff();
+  lcd.init();
+  lcd.backlight();
+  
+  pinMode(trigPin, OUTPUT);
+  pinMode(echoPin, INPUT);
+  
+  lcd.setCursor(0, 0);
+  lcd.print("Digital Ruler");
+  lcd.setCursor(0, 1);
+  lcd.print("Loading...");
+  delay(2000);
+
+  lcd.clear();
+  lcd.setCursor(0, 0); lcd.print("CM: ");
+  lcd.setCursor(0, 1); lcd.print("IN: ");
 }
 
 void loop() {
-  Serial.println("red on");
-  toggleLED(redPin, DELAY);
-  Serial.println("red off");
-  Serial.println("green on");
-  toggleLED(greenPin, DELAY);
-  Serial.println("green off");
-  Serial.println("yellow on");
-  toggleLED(yellowPin, DELAY_YELLOW);
-  Serial.println("yellow off");
-}
+  // Generate pulse
+  digitalWrite(trigPin, LOW);
+  delayMicroseconds(2);
+  digitalWrite(trigPin, HIGH);
+  delayMicroseconds(10);
+  digitalWrite(trigPin, LOW);
 
-void toggleLED(int led_pin, int led_delay) {
-  digitalWrite(led_pin, HIGH);
-  delay(led_delay);
-  digitalWrite(led_pin, LOW);
-}
+  long duration = pulseIn(echoPin, HIGH);
+  float distanceCM = duration * 0.034 / 2;
+  float distanceINCH = distanceCM / 2.54;
 
-void allOff() {
-  digitalWrite(redPin, LOW);
-  digitalWrite(yellowPin, LOW);
-  digitalWrite(greenPin, LOW);
+  // Debug ke Serial Monitor
+  Serial.print("Duration: ");
+  Serial.print(duration);
+  Serial.print(" μs | Distance: ");
+  Serial.print(distanceCM);
+  Serial.print(" cm | ");
+  Serial.print(distanceINCH);
+  Serial.println(" inches");
+
+  // Update LCD hanya jika perubahan > 0.5 cm
+  if (abs(distanceCM - lastCM) > 0.5) {
+    lcd.setCursor(4, 0);
+    lcd.print(distanceCM, 1);
+    lcd.print("     "); // hapus sisa angka lama
+    lastCM = distanceCM;
+  }
+
+  if (abs(distanceINCH - lastINCH) > 0.2) {
+    lcd.setCursor(4, 1);
+    lcd.print(distanceINCH, 1);
+    lcd.print("     ");
+    lastINCH = distanceINCH;
+  }
+
+  // Status
+  lcd.setCursor(10, 0);
+  if (distanceCM < 10) {
+    lcd.print("Dekat ");
+  } else if (distanceCM < 50) {
+    lcd.print("Sedang");
+  } else {
+    lcd.print("Jauh  ");
+  }
+
+  delay(50);
 }
